@@ -266,11 +266,11 @@ Regexp match data 0 points to the chars."
   See URL `http://www.minizinc.org/'."
   :command ("mzn2fzn" "--model-check-only" source)
   :error-patterns
-  ((error line-start (file-name) ":" line ":\n"
+  ((error line-start (file-name) ":" line (* any) ":\n"
           (* any) "\n"
           (* any) "\n"
           "Error: " (message) line-end)
-   (error line-start (file-name) ":" line ":\n"
+   (error line-start (file-name) ":" line (* any) ":\n"
           "MiniZinc:" (message) line-end))
     :modes minizinc-mode)
   (add-to-list 'flycheck-checkers 'mzn2fzn)
@@ -278,7 +278,102 @@ Regexp match data 0 points to the chars."
             (lambda ()
               (flycheck-mode))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; support for executing models
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun minizinc--binary (fname)
+  fname
+  ;;(expand-file-name fname minizinc--dir)
+  )
+
+(defun minizinc-switch-to-output ()
+  "Switch to the minizinc output buffer"
+  (interactive)  
+  (pop-to-buffer "*minizinc-output*"))
+
+(defun minizinc-switch-to-last-minizinc-buffer ()
+  "Switch to the most recently active minizinc-mode buffer "
+  (interactive)
+  (if (and (boundp 'minizinc-output-mode) minizinc-output-mode)
+      (if-let* ((buf (seq-find (lambda (b)
+				  (with-current-buffer b (derived-mode-p 'minizinc-mode)))
+				(buffer-list))))
+	  (pop-to-buffer buf)
+	(user-error "No Minizinc buffer found"))
+    (user-error "Not in a Minizinc output buffer")))
+
+(define-minor-mode minizinc-output-mode
+  "minizinc output buffer"
+  :lighter " mz"
+  :keymap (let ((km (make-sparse-keymap)))
+	    (define-key km (kbd "C-c C-z") 'minizinc-switch-to-last-minizinc-buffer)
+	    km))
+
+(defun minizinc--get-buffer-opt (opt-name)
+  (save-excursion
+    (goto-char 0)
+    (when (re-search-forward
+	   (concat
+	    "^%%[[:blank:]]*" opt-name ":[[:blank:]]*\\(.*\\)$") nil t)
+      (match-string-no-properties 1))))
+
+;; (defun minizinc--buffer-data-file ()
+;;   "get the name of a data file specified with: %% data-file: some-name.dzn"
+;;   (minizinc--get-buffer-opt "data-file"))
+  
+;; (defun minizinc--buffer-data-file ()
+;;   "get the name of a data file specified with: %% data-file: some-name.dzn"
+;;   (save-excursion
+;;     (goto-char 0)
+;;     (when (re-search-forward "^%%[[:blank:]]*data-file:[[:blank:]]*\\([[:graph:]]+\\)$" nil t )
+;;       (match-string-no-properties 1))))
+
+(defun minizinc--is-data-file? ()
+  (s-ends-with? ".dzn"  (buffer-file-name) t))
+
+(defun minizinc--run-buffer (&optional flags)
+  (save-buffer)
+  (let* ((model-filename (if (minizinc--is-data-file?)
+			 (minizinc--get-buffer-opt "model-file") ;; TODO: use if-let* here & grab the last visited model file if nil
+			 (buffer-file-name)))
+	(data-filename (if (minizinc--is-data-file?)
+			   (buffer-file-name)
+			 (when-let (df (minizinc--get-buffer-opt "data-file"))
+			   (concat (file-name-directory model-filename)  df))))
+	(cmd (concat (minizinc--binary "minizinc")
+		     flags ;; " -Ggecode "
+		     ;; TODO - need to read options from model file for data file runs
+		     " " (minizinc--get-buffer-opt "options")
+		     " " model-filename
+		     " " data-filename)))
+    (message "Running minizinc with: %s" cmd)
+    (shell-command  cmd "*minizinc-output*")
+    (with-current-buffer "*minizinc-output*"
+      (minizinc-output-mode t))
+    (message "minizinc finished")))
+
+(defun minizinc-run ()
+  (interactive)
+  (minizinc--run-buffer))
+
+(defun minizinc-run-verbose ()
+  (interactive)
+  (minizinc--run-buffer "--all-solutions"))
+;; ^[:blank:]*data-file:[:blank:]*[^[:blank"]]
+
+(defun minizinc--add-keybindings ()
+  (interactive)
+  (local-set-key (kbd "C-c C-k") 'minizinc-run) 
+  (local-set-key (kbd "C-c C-M-k") 'minizinc-run-verbose)
+  (local-set-key (kbd "C-c C-z") 'minizinc-switch-to-output))
+
+(add-hook 'minizinc-mode-hook 'minizinc--add-keybindings)
+
+
+;;(provide 'minizinc-output-mode)
 (provide 'minizinc-mode)
+
 
 ;; Local Variable:
 ;; coding: utf-8
