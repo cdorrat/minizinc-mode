@@ -59,6 +59,7 @@
 ;;; Code:
 
 (require 'cc-mode)
+(require 'haskell-mode) ;; required for font lock symbol support
 
 (defgroup minizinc nil
   "Major mode for MiniZinc code"
@@ -345,8 +346,9 @@ Regexp match data 0 points to the chars."
 		     flags ;; " -Ggecode "
 		     ;; TODO - need to read options from model file for data file runs
 		     " " (minizinc--get-buffer-opt "options")
-		     " " model-filename
-		     " " data-filename)))
+		     " \"" model-filename "\""
+		     (when data-filename
+		       (concat " \"" data-filename "\"")))))
     (message "Running minizinc with: %s" cmd)
     (shell-command  cmd "*minizinc-output*")
     (with-current-buffer "*minizinc-output*"
